@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections import Counter
 from typing import Any
 
 from .models import GraphHit, GraphQuery, GraphRetrievalResult, TemporalContextGraph
@@ -28,32 +29,94 @@ def _matches_metadata(metadata: dict[str, Any], filters: dict[str, Any]) -> bool
     return True
 
 
-def _visible_episode_ids(graph: TemporalContextGraph, max_chapter: int | None) -> list[str]:
-    return [
-        episode_id
-        for episode_id, episode in graph.episodes.items()
-        if max_chapter is None or episode.chapter_index <= max_chapter
-    ]
-
-
 class TemporalGraphRetriever:
-    """Retrieve progress-aware temporal context with provenance."""
+    """Retrieve progress-aware temporal context with graph filters and browse support."""
 
     def retrieve(self, graph: TemporalContextGraph, query: GraphQuery) -> GraphRetrievalResult:
-        visible_episode_ids = _visible_episode_ids(graph, query.max_chapter)
+        visible_episode_ids = graph.visible_episode_ids(query.max_chapter)
         visible_entity_ids = {
             entity_id
             for entity_id, entity in graph.entities.items()
-            if query.max_chapter is None or entity.first_seen_chapter <= query.max_chapter
+            if (query.max_chapter is None or entity.first_seen_chapter <= query.max_chapter)
+            and (query.min_chapter is None or entity.last_seen_chapter >= query.min_chapter)
         }
         query_tokens = _tokenize(query.query)
         requested_entity_terms = {item.strip().lower() for item in query.entity_names if item.strip()}
         requested_tags = set(query.tags)
+        requested_node_types = set(query.node_types)
 
+        episode_hits: list[GraphHit] = []
+        if not requested_node_types or "episode" in requested_node_types:
+            episode_hits = self._retrieve_episodes(
+                graph=graph,
+                query=query,
+                query_tokens=query_tokens,
+                visible_episode_ids=visible_episode_ids,
+                requested_entity_terms=requested_entity_terms,
+                requested_tags=requested_tags,
+            )
+        ranked_episode_hits = sorted(episode_hits, key=lambda item: item.score, reverse=True)[: query.top_k]
+        output_hits = list(ranked_episode_hits)
+        supporting_episode_ids = {hit.hit_id for hit in ranked_episode_hits if hit.hit_type == "episode"}
+
+        if query.include_chapters and (not requested_node_types or "chapter" in requested_node_types):
+            output_hits.extend(self._retrieve_chapters(graph, query, supporting_episode_ids, query_tokens))
+        if query.include_entities and (not requested_node_types or "entity" in requested_node_types):
+            output_hits.extend(
+                self._retrieve_entities(graph, query, visible_entity_ids, supporting_episode_ids, query_tokens)
+            )
+        if query.include_relations and (not requested_node_types or "relation" in requested_node_types):
+            output_hits.extend(
+                self._retrieve_relations(
+                    graph,
+                    query,
+                    visible_episode_ids,
+                    visible_entity_ids,
+                    supporting_episode_ids,
+                    query_tokens,
+                )
+            )
+        if query.include_communities and (not requested_node_types or "community" in requested_node_types):
+            output_hits.extend(self._retrieve_communities(graph, query, supporting_episode_ids, query_tokens))
+        if query.include_sagas and (not requested_node_types or "saga" in requested_node_types):
+            output_hits.extend(self._retrieve_sagas(graph, query, supporting_episode_ids, query_tokens))
+
+        output_hits = sorted(output_hits, key=lambda item: (item.score, -(item.chapter_index or 0)), reverse=True)
+        hit_breakdown = Counter(hit.hit_type for hit in output_hits)
+        return GraphRetrievalResult(
+            query=query,
+            hits=output_hits[: max(query.top_k, len(ranked_episode_hits)) + 8],
+            visible_episode_count=len(visible_episode_ids),
+            visible_entity_count=len(visible_entity_ids),
+            applied_filters={
+                "max_chapter": query.max_chapter,
+                "min_chapter": query.min_chapter,
+                "entity_names": query.entity_names,
+                "entity_types": query.entity_types,
+                "relation_types": query.relation_types,
+                "tags": query.tags,
+                "node_types": query.node_types,
+                "metadata_filters": query.metadata_filters,
+            },
+            hit_type_breakdown=dict(hit_breakdown),
+            graph_metadata=graph.metadata,
+            graph_stats=graph.stats(),
+        )
+
+    def _retrieve_episodes(
+        self,
+        graph: TemporalContextGraph,
+        query: GraphQuery,
+        query_tokens: list[str],
+        visible_episode_ids: list[str],
+        requested_entity_terms: set[str],
+        requested_tags: set[str],
+    ) -> list[GraphHit]:
         hits: list[GraphHit] = []
-
         for episode_id in visible_episode_ids:
             episode = graph.episodes[episode_id]
+            if query.min_chapter is not None and episode.chapter_index < query.min_chapter:
+                continue
             if requested_tags and not requested_tags.intersection(episode.tags):
                 continue
             if query.metadata_filters and not _matches_metadata(episode.metadata, query.metadata_filters):
@@ -68,7 +131,7 @@ class TemporalGraphRetriever:
                 }
                 matches = requested_entity_terms.intersection(entity_names)
                 entity_bonus = 0.75 * len(matches)
-                if not matches and query.entity_names:
+                if not matches:
                     continue
 
             metadata_bonus = 0.25 * sum(
@@ -94,34 +157,50 @@ class TemporalGraphRetriever:
                         "tags": episode.tags,
                         "community_ids": episode.community_ids,
                         "saga_ids": episode.saga_ids,
+                        "spoiler_level": episode.spoiler_level,
                     },
                     provenance=episode.provenance,
                 )
             )
+        return hits
 
-        ranked_episode_hits = sorted(hits, key=lambda item: item.score, reverse=True)[: query.top_k]
-        output_hits = list(ranked_episode_hits)
-        supporting_episode_ids = {hit.hit_id for hit in ranked_episode_hits if hit.hit_type == "episode"}
-
-        if query.include_entities:
-            output_hits.extend(
-                self._retrieve_entities(graph, query, visible_entity_ids, supporting_episode_ids)
+    def _retrieve_chapters(
+        self,
+        graph: TemporalContextGraph,
+        query: GraphQuery,
+        supporting_episode_ids: set[str],
+        query_tokens: list[str],
+    ) -> list[GraphHit]:
+        hits: list[GraphHit] = []
+        for chapter in graph.chapters.values():
+            if query.max_chapter is not None and chapter.chapter_index > query.max_chapter:
+                continue
+            if query.min_chapter is not None and chapter.chapter_index < query.min_chapter:
+                continue
+            if not supporting_episode_ids.intersection(chapter.episode_ids):
+                continue
+            score = _text_score(query_tokens, f"{chapter.title} {chapter.metadata.get('timeline_summary', '')}")
+            score += min(len(supporting_episode_ids.intersection(chapter.episode_ids)), 3) * 0.35
+            if score <= 0:
+                continue
+            hits.append(
+                GraphHit(
+                    hit_id=chapter.chapter_node_id,
+                    hit_type="chapter",
+                    score=round(score, 4),
+                    reason="chapter_timeline_overlap",
+                    chapter_index=chapter.chapter_index,
+                    payload={
+                        "chapter_id": chapter.chapter_id,
+                        "title": chapter.title,
+                        "entity_ids": chapter.entity_ids,
+                        "relation_ids": chapter.relation_ids,
+                        "paragraph_count": chapter.paragraph_count,
+                    },
+                    provenance=chapter.provenance[:3],
+                )
             )
-        if query.include_relations:
-            output_hits.extend(self._retrieve_relations(graph, query, visible_episode_ids, visible_entity_ids, supporting_episode_ids))
-        if query.include_communities:
-            output_hits.extend(self._retrieve_communities(graph, query, supporting_episode_ids))
-        if query.include_sagas:
-            output_hits.extend(self._retrieve_sagas(graph, query, supporting_episode_ids))
-
-        output_hits = sorted(output_hits, key=lambda item: (item.score, -(item.chapter_index or 0)), reverse=True)
-        return GraphRetrievalResult(
-            query=query,
-            hits=output_hits[: max(query.top_k, len(ranked_episode_hits)) + 6],
-            visible_episode_count=len(visible_episode_ids),
-            visible_entity_count=len(visible_entity_ids),
-            graph_metadata=graph.metadata,
-        )
+        return sorted(hits, key=lambda item: item.score, reverse=True)[:3]
 
     def _retrieve_entities(
         self,
@@ -129,12 +208,17 @@ class TemporalGraphRetriever:
         query: GraphQuery,
         visible_entity_ids: set[str],
         supporting_episode_ids: set[str],
+        query_tokens: list[str],
     ) -> list[GraphHit]:
         hits: list[GraphHit] = []
-        query_tokens = _tokenize(query.query)
         requested_entities = {value.lower() for value in query.entity_names}
+        allowed_types = set(query.entity_types)
         for entity_id in visible_entity_ids:
             entity = graph.entities[entity_id]
+            if entity.mention_count < query.min_entity_mentions:
+                continue
+            if allowed_types and entity.entity_type not in allowed_types:
+                continue
             searchable_text = " ".join([entity.canonical_name, *entity.aliases, entity.entity_type])
             score = _text_score(query_tokens, searchable_text)
             if requested_entities and entity.canonical_name.lower() in requested_entities:
@@ -156,6 +240,7 @@ class TemporalGraphRetriever:
                         "entity_type": entity.entity_type,
                         "mention_count": entity.mention_count,
                         "episode_ids": entity.episode_ids[:6],
+                        "neighbor_count": len(graph.entity_neighbors(entity.entity_id)),
                     },
                     provenance=[
                         graph.episodes[episode_id].provenance[0]
@@ -173,14 +258,22 @@ class TemporalGraphRetriever:
         visible_episode_ids: list[str],
         visible_entity_ids: set[str],
         supporting_episode_ids: set[str],
+        query_tokens: list[str],
     ) -> list[GraphHit]:
         hits: list[GraphHit] = []
         visible_episodes = set(visible_episode_ids)
         requested_entities = {value.lower() for value in query.entity_names}
+        allowed_relation_types = set(query.relation_types)
         for edge in graph.relations.values():
+            if edge.weight < query.min_relation_weight:
+                continue
+            if allowed_relation_types and edge.relation_type not in allowed_relation_types:
+                continue
             if edge.source_entity_id not in visible_entity_ids or edge.target_entity_id not in visible_entity_ids:
                 continue
             if query.max_chapter is not None and edge.validity_start_chapter > query.max_chapter:
+                continue
+            if query.min_chapter is not None and (edge.validity_end_chapter or 0) < query.min_chapter:
                 continue
             if not visible_episodes.intersection(edge.episode_ids):
                 continue
@@ -188,11 +281,8 @@ class TemporalGraphRetriever:
             source_name = graph.entities[edge.source_entity_id].canonical_name
             target_name = graph.entities[edge.target_entity_id].canonical_name
             name_text = f"{source_name} {target_name} {edge.relation_type}"
-            score = _text_score(_tokenize(query.query), name_text) + min(edge.weight, 3.0) * 0.2
-            if requested_entities and {
-                source_name.lower(),
-                target_name.lower(),
-            }.intersection(requested_entities):
+            score = _text_score(query_tokens, name_text) + min(edge.weight, 3.0) * 0.2
+            if requested_entities and {source_name.lower(), target_name.lower()}.intersection(requested_entities):
                 score += 0.8
             if supporting_episode_ids.intersection(edge.episode_ids):
                 score += 0.6
@@ -212,6 +302,7 @@ class TemporalGraphRetriever:
                         "validity_start_chapter": edge.validity_start_chapter,
                         "validity_end_chapter": edge.validity_end_chapter,
                         "episode_ids": edge.episode_ids,
+                        "weight": edge.weight,
                     },
                     provenance=edge.provenance[:3],
                 )
@@ -223,14 +314,17 @@ class TemporalGraphRetriever:
         graph: TemporalContextGraph,
         query: GraphQuery,
         supporting_episode_ids: set[str],
+        query_tokens: list[str],
     ) -> list[GraphHit]:
         hits: list[GraphHit] = []
         for community in graph.communities.values():
             if query.max_chapter is not None and community.chapter_start > query.max_chapter:
                 continue
+            if query.min_chapter is not None and community.chapter_end < query.min_chapter:
+                continue
             if not supporting_episode_ids.intersection(community.episode_ids):
                 continue
-            label_score = _text_score(_tokenize(query.query), community.label)
+            label_score = _text_score(query_tokens, community.label)
             score = label_score + 0.3 * min(len(community.entity_ids), 4)
             hits.append(
                 GraphHit(
@@ -254,14 +348,17 @@ class TemporalGraphRetriever:
         graph: TemporalContextGraph,
         query: GraphQuery,
         supporting_episode_ids: set[str],
+        query_tokens: list[str],
     ) -> list[GraphHit]:
         hits: list[GraphHit] = []
         for saga in graph.sagas.values():
             if query.max_chapter is not None and saga.chapter_start > query.max_chapter:
                 continue
+            if query.min_chapter is not None and saga.chapter_end < query.min_chapter:
+                continue
             if not supporting_episode_ids.intersection(saga.episode_ids):
                 continue
-            score = _text_score(_tokenize(query.query), f"{saga.label} {saga.summary}") + 0.25 * len(
+            score = _text_score(query_tokens, f"{saga.label} {saga.summary}") + 0.25 * len(
                 supporting_episode_ids.intersection(saga.episode_ids)
             )
             hits.append(

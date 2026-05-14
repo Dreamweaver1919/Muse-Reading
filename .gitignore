@@ -13,6 +13,10 @@ venv/
 env/
 ENV/
 
+# Local environment files
+.env
+.env.local
+
 # Local editor and OS files
 .DS_Store
 Thumbs.db

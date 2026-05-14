@@ -3,193 +3,222 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Muse Reading MVP</title>
-    <link rel="stylesheet" href="/static/main.css" />
+    <title>Muse Reading</title>
+    <link rel="stylesheet" href="/static/main.css?v=20260514d" />
   </head>
   <body>
-    <div class="app-shell">
-      <aside class="rail rail-left">
-        <div class="brand-card">
-          <p class="eyebrow">Muse Reading MVP</p>
-          <h1>沉浸式阅读器</h1>
-          <p class="muted">
-            用上传、阅读进度、段落高亮与 persona 引导，串起阅读、问答、总结与后续 agent 接口。
-          </p>
+    <div class="app-frame">
+      <header class="topbar">
+        <div class="topbar-brand">
+          <p class="eyebrow">Muse Reading</p>
+          <h1>AI Reading Workspace</h1>
         </div>
+        <nav class="topbar-tabs" aria-label="workspace tabs">
+          <button class="tab-chip tab-chip-active" type="button">Library</button>
+          <button class="tab-chip" type="button">Reader</button>
+          <button class="tab-chip" type="button">Assistant</button>
+        </nav>
+      </header>
 
-        <section class="card">
-          <div class="section-heading">
-            <h2>上传入口</h2>
-            <span class="badge">TXT</span>
-          </div>
-          <form id="upload-form" class="stack">
-            <label class="upload-box" for="file-input">
-              <strong>导入文本书籍</strong>
-              <span class="muted">支持 `.txt`，上传后自动加入左侧书架。</span>
-            </label>
-            <input id="file-input" type="file" accept=".txt" />
-            <button type="submit">上传并开始阅读</button>
-          </form>
-        </section>
+      <section id="pending-indicator" class="pending-indicator" aria-live="polite">
+        <div class="pending-indicator-header">
+          <span class="eyebrow">Request Status</span>
+          <span id="pending-label" class="pending-label">idle</span>
+        </div>
+        <div class="pending-track">
+          <div id="pending-bar" class="pending-bar"></div>
+        </div>
+      </section>
 
-        <section class="card">
-          <div class="section-heading">
-            <h2>Persona</h2>
-            <span id="persona-type-badge" class="badge badge-soft">neutral</span>
-          </div>
-          <div class="stack">
-            <select id="persona-select" aria-label="选择 persona"></select>
-            <div class="persona-meta">
-              <p id="persona-name" class="persona-name">Neutral Reader</p>
-              <p id="persona-citation" class="muted">Project MVP default persona</p>
-              <div class="pill-row" id="persona-traits"></div>
-              <div class="persona-guidance">
-                <p class="label">Prompt scaffold</p>
-                <ul id="persona-scaffold" class="plain-list"></ul>
+      <main class="workspace">
+        <aside class="column column-left">
+          <section class="panel panel-hero">
+            <p class="eyebrow">Reader Setup</p>
+            <h2 class="panel-title">沉浸式阅读器</h2>
+            <p class="muted">上传文本后自动切片、建图，并进入阅读、角色陪读与名家导读对话。</p>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Import</p>
+                <h3>上传入口</h3>
+              </div>
+              <span class="badge">TXT / PDF / EPUB</span>
+            </div>
+            <form id="upload-form" class="stack">
+              <label class="upload-box" for="file-input">
+                <strong>导入阅读文本</strong>
+                <span class="muted">支持 `.txt`、`.pdf`、`.epub`。扫描 PDF 因缺少文本层，当前暂不支持。</span>
+              </label>
+              <input id="file-input" type="file" accept=".txt,.pdf,.epub,application/pdf,application/epub+zip" />
+              <button class="primary-button" type="submit">上传并开始阅读</button>
+            </form>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Literary Agent</p>
+                <h3>名家导读</h3>
+              </div>
+              <span id="persona-type-badge" class="badge badge-warm">literary_master</span>
+            </div>
+            <div class="stack">
+              <select id="persona-select" aria-label="选择名家导读"></select>
+              <div class="persona-meta">
+                <p id="persona-name" class="persona-name">导读 agent</p>
+                <p id="persona-citation" class="muted"></p>
+                <div class="pill-row" id="persona-traits"></div>
               </div>
             </div>
-          </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Character Agent</p>
+                <h3>角色陪读</h3>
+              </div>
+              <span class="badge badge-cool">book_character</span>
+            </div>
+            <div class="stack">
+              <label class="label" for="character-select">角色候选</label>
+              <select id="character-select" aria-label="选择角色"></select>
+              <label class="label" for="character-input">或手动输入角色名</label>
+              <input id="character-input" class="text-input" type="text" placeholder="输入角色名后生成角色画像" />
+              <button id="character-generate-btn" class="secondary-button" type="button">生成角色画像</button>
+              <div id="character-profile-card" class="character-profile-card">
+                <p class="muted">打开书籍后会根据已读内容生成角色候选，并可进一步生成角色画像。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Shelf</p>
+                <h3>书架列表</h3>
+              </div>
+              <span id="book-count" class="badge">0 本</span>
+            </div>
+            <ul id="book-list" class="book-list"></ul>
+          </section>
+        </aside>
+
+        <section class="column column-center">
+          <section class="panel panel-reader-hero">
+            <div class="reader-summary">
+              <p class="eyebrow">Reader Workspace</p>
+              <h2 id="book-title">请选择一本书开始阅读</h2>
+              <p id="book-subtitle" class="muted">页面会跟踪章节、段落与翻页位置，并同步构造 reading_progress。</p>
+            </div>
+            <div class="stats-grid">
+              <article class="stat-card">
+                <span class="label">当前章节</span>
+                <strong id="hero-chapter">-</strong>
+              </article>
+              <article class="stat-card">
+                <span class="label">段落定位</span>
+                <strong id="hero-paragraph">-</strong>
+              </article>
+              <article class="stat-card">
+                <span class="label">停留时长</span>
+                <strong id="hero-dwell">0s</strong>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel toolbar-panel">
+            <div class="toolbar-grid">
+              <div class="field-block">
+                <label class="label" for="chapter-select">章节导航</label>
+                <select id="chapter-select" aria-label="选择章节"></select>
+              </div>
+              <div class="field-block">
+                <label class="label" for="paragraph-jump">段落定位</label>
+                <select id="paragraph-jump" aria-label="选择段落"></select>
+              </div>
+              <div class="field-block field-wide">
+                <span class="label">阅读状态</span>
+                <p id="progress-text" class="muted">尚未加载书籍。</p>
+              </div>
+              <div class="field-actions">
+                <button id="summary-btn" class="secondary-button" type="button">章节总结</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="reader-grid">
+            <section class="panel panel-nav">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Outline</p>
+                  <h3>章节目录</h3>
+                </div>
+                <span id="toc-progress" class="badge">未开始</span>
+              </div>
+              <div id="chapter-nav" class="chapter-nav"></div>
+            </section>
+
+            <section class="panel panel-reading">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Reader</p>
+                  <h3>正文阅读</h3>
+                </div>
+                <span class="badge badge-cool">In-text Bubbles</span>
+              </div>
+              <div class="page-toolbar">
+                <button id="prev-page-btn" class="secondary-button page-nav-button" type="button">上一页</button>
+                <div class="page-status">
+                  <span class="label">Page</span>
+                  <strong id="page-indicator">- / -</strong>
+                </div>
+                <button id="next-page-btn" class="secondary-button page-nav-button" type="button">下一页</button>
+              </div>
+              <div id="passage-list" class="page-viewer"></div>
+            </section>
+          </section>
         </section>
 
-        <section class="card">
-          <div class="section-heading">
-            <h2>书籍列表</h2>
-            <span id="book-count" class="badge badge-soft">0 本</span>
-          </div>
-          <ul id="book-list" class="book-list"></ul>
-        </section>
-      </aside>
+        <aside class="column column-right">
+          <section class="panel assistant-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Assistant</p>
+                <h3>对话工作台</h3>
+              </div>
+              <div class="assistant-tabs" role="tablist" aria-label="assistant mode switch">
+                <button id="persona-mode-btn" class="mode-chip mode-chip-active" type="button">名家导读</button>
+                <button id="character-mode-btn" class="mode-chip" type="button">角色陪读</button>
+              </div>
+            </div>
 
-      <main class="reader">
-        <header class="reader-hero">
-          <div class="hero-copy">
-            <p class="eyebrow">Reader Workspace</p>
-            <h2 id="book-title">请选择一本书开始阅读</h2>
-            <p id="book-subtitle" class="muted">
-              页面会跟踪章节、段落与滚动位置，并构造对齐架构文档的 `reading_progress`。
-            </p>
-          </div>
-          <div class="hero-stats">
-            <div class="stat-card">
-              <span class="label">当前章节</span>
-              <strong id="hero-chapter">-</strong>
+            <div class="soft-block">
+              <p class="label">当前选中文本</p>
+              <p id="highlight-preview" class="preview-text">点击正文中的段落后，问答会围绕该段落展开。</p>
             </div>
-            <div class="stat-card">
-              <span class="label">段落定位</span>
-              <strong id="hero-paragraph">-</strong>
-            </div>
-            <div class="stat-card">
-              <span class="label">停留时长</span>
-              <strong id="hero-dwell">0s</strong>
-            </div>
-          </div>
-        </header>
 
-        <section class="toolbar card card-inline">
-          <div class="toolbar-group">
-            <label class="label" for="chapter-select">章节导航</label>
-            <select id="chapter-select" aria-label="选择章节"></select>
-          </div>
-          <div class="toolbar-group">
-            <label class="label" for="paragraph-jump">段落跳转</label>
-            <select id="paragraph-jump" aria-label="跳转段落"></select>
-          </div>
-          <div class="toolbar-group toolbar-progress">
-            <span class="label">阅读状态</span>
-            <p id="progress-text" class="muted">
-              尚未载入书籍。
-            </p>
-          </div>
-          <div class="toolbar-actions">
-            <button id="summary-btn" type="button">章节总结</button>
-          </div>
-        </section>
+            <div id="assistant-status" class="assistant-status muted">当前使用名家导读模式。</div>
 
-        <section class="reader-grid">
-          <div class="card toc-card">
-            <div class="section-heading">
-              <h3>章节目录</h3>
-              <span id="toc-progress" class="badge badge-soft">未开始</span>
-            </div>
-            <div id="chapter-nav" class="chapter-nav"></div>
-          </div>
+            <div id="chat-history" class="chat-history" aria-live="polite"></div>
 
-          <div class="card passage-card">
-            <div class="section-heading">
-              <h3>正文阅读</h3>
-              <span class="badge">Paragraph Mode</span>
+            <div class="composer">
+              <textarea
+                id="question-input"
+                placeholder="围绕当前阅读内容继续提问，例如：这段为什么重要？这个角色此刻最在意什么？"
+              ></textarea>
+              <div class="composer-actions">
+                <button id="clear-chat-btn" class="ghost-button" type="button">清空对话</button>
+                <button id="ask-btn" class="primary-button" type="button">发送提问</button>
+              </div>
             </div>
-            <div id="passage-list" class="passages"></div>
-          </div>
-        </section>
+          </section>
+        </aside>
       </main>
-
-      <aside class="rail rail-right">
-        <section class="card">
-          <div class="section-heading">
-            <h2>高亮问答入口</h2>
-            <span class="badge">selection_context</span>
-          </div>
-          <div class="stack">
-            <div class="preview-box">
-              <p class="label">已选段落</p>
-              <p id="highlight-preview" class="preview-text">
-                点击中间段落后，这里会生成选中文本和左右文上下文预览。
-              </p>
-            </div>
-            <div class="context-grid">
-              <div>
-                <p class="label">左文</p>
-                <p id="left-context" class="context-text muted">等待选择段落</p>
-              </div>
-              <div>
-                <p class="label">右文</p>
-                <p id="right-context" class="context-text muted">等待选择段落</p>
-              </div>
-            </div>
-            <textarea
-              id="question-input"
-              placeholder="围绕当前高亮提问，例如：这一段为什么重要？人物关系有什么细微变化？"
-            ></textarea>
-            <button id="ask-btn" type="button">发送问答请求</button>
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="section-heading">
-            <h2>主动提示占位</h2>
-            <span class="badge">bubble</span>
-          </div>
-          <div id="bubble-list" class="bubble-list"></div>
-        </section>
-
-        <section class="card">
-          <div class="section-heading">
-            <h2>接口载荷对齐</h2>
-            <span class="badge">preview</span>
-          </div>
-          <div class="stack">
-            <div>
-              <p class="label">reading_progress</p>
-              <pre id="reading-progress-box" class="json-box"></pre>
-            </div>
-            <div>
-              <p class="label">selection_context</p>
-              <pre id="selection-context-box" class="json-box"></pre>
-            </div>
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="section-heading">
-            <h2>输出面板</h2>
-            <span id="output-mode" class="badge badge-soft">idle</span>
-          </div>
-          <pre id="output-box" class="output-box"></pre>
-        </section>
-      </aside>
     </div>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260514d"></script>
   </body>
 </html>

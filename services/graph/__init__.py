@@ -1,5 +1,7 @@
 from .builder import TemporalGraphBuilder, build_temporal_graph
 from .models import (
+    ChapterNode,
+    ChapterTimelineEntry,
     CommunityNode,
     EntityNode,
     EpisodeNode,
@@ -7,6 +9,8 @@ from .models import (
     GraphProvenance,
     GraphQuery,
     GraphRetrievalResult,
+    GraphStats,
+    NodeTable,
     RelationEdge,
     SagaNode,
     TemporalContextGraph,
@@ -14,6 +18,8 @@ from .models import (
 from .retrieval import TemporalGraphRetriever, search_temporal_graph
 
 __all__ = [
+    "ChapterNode",
+    "ChapterTimelineEntry",
     "CommunityNode",
     "EntityNode",
     "EpisodeNode",
@@ -21,6 +27,8 @@ __all__ = [
     "GraphProvenance",
     "GraphQuery",
     "GraphRetrievalResult",
+    "GraphStats",
+    "NodeTable",
     "RelationEdge",
     "SagaNode",
     "TemporalContextGraph",

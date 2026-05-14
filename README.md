@@ -15,13 +15,13 @@ This repository is the current engineering scaffold for that idea. It is built a
 
 ## Core Features
 
-- Text upload and local book ingestion for `.txt` files.
+- Text upload and local book ingestion for `.txt`, `.pdf`, and `.epub` files.
 - Chapter and paragraph parsing with chunk-level metadata.
 - Temporal graph generation from uploaded book content.
 - Reader UI with chapter navigation, paragraph selection, and payload preview.
 - Highlight-triggered QA with progress-aware retrieval.
-- Chapter summary endpoint with persona-aware response style.
-- Minimal persona registry and prompt scaffold support.
+- Chapter summary endpoint with persona-aware generation.
+- Complete runtime path for Lu Xun, Mark Twain, and Zhang Ailing lead-reader agents through persona RAG plus OpenAI-compatible model endpoints.
 - Benchmark fixtures for `highlight_qa`, `anti_spoiler`, and `chapter_summary`.
 
 ## System Architecture
@@ -114,6 +114,10 @@ The first practical use of this hierarchy already exists in the local dataset-bu
 python -m pip install -r requirements.txt
 ```
 
+### Configure Persona Agents
+
+To use `lu-xun`, `mark-twain`, or `zhang-ailing`, copy [`.env.example`](/C:/Users/21358/Desktop/MuseReading/.env.example) to `.env` and fill in your own OpenAI-compatible endpoint, model name, and API key for each agent. The app reads this root-level `.env` automatically at startup.
+
 ### Run The API And Reader
 
 ```bash
@@ -130,7 +134,7 @@ The reader UI is served directly by FastAPI from [frontend/public/index.html](/C
 
 Current UI capabilities:
 
-- upload a `.txt` book
+- upload a `.txt`, `.pdf`, or `.epub` book
 - browse chapter and paragraph content
 - select a paragraph as reading focus
 - inspect `reading_progress` and `selection_context`
@@ -159,7 +163,7 @@ Current endpoints exposed by [api/app.py](/C:/Users/21358/Desktop/MuseReading/ap
 ### Minimal API Notes
 
 - `POST /api/upload`
-  Uploads a `.txt` file, parses it into a book record, and builds a temporal graph.
+  Uploads a `.txt`, `.pdf`, or `.epub` file, parses it into a book record, and builds a temporal graph.
 - `POST /api/qa`
   Accepts `book_id`, `question`, optional `highlight_text`, `current_chapter`, and `persona_id`.
 - `POST /api/orchestrate`
@@ -215,10 +219,10 @@ These are smoke and regression checks, not full leaderboard-grade benchmarks yet
 
 ## Current Limitations
 
-- The MVP currently supports `.txt` upload only.
+- `pdf` support currently expects a text-layer PDF rather than a scanned image PDF.
 - Temporal graph extraction is heuristic and lightweight.
 - Frontend copy contains placeholder or draft text in several places.
-- Persona support is scaffold-level and not yet a complete companion-reading system.
+- Persona output depends on locally configured model credentials in `.env`.
 - Evaluation is still small and synthetic compared with the intended benchmark scope.
 - Copyright-sensitive corpora are represented mostly through manifests and examples rather than full released text.
 
